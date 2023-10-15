@@ -1,44 +1,53 @@
 from django.views.decorators.csrf import csrf_exempt
-from django.http import JsonResponse
+from django.http import JsonResponse, HttpResponse
 import openai
 import json
 import requests
 from django.conf import settings
 
-instruction = "You are analyzing text gathered from a customer who is looking for a new home. \
-    You will pick out specific keywords from the text and use it to form a JSON object which matches what the customer is looking for. \
-    Your response will always be a JSON object. \
-    The format of your response will be: <\{\"input\":\"\<location>\", \"limit\": \"5\"\}> \
-    where <location> will be a string of the state, city, and zipcode of the area the customer \
-    wants to move to. The state and city must be specified but the zipcode is optional. The \"limit\" property is always 5.\n"
-
 def get_gpt_summary(user_prompt):
-    prompt = repr("<{user_prompt.userIn}>")
+    # User prompt is already a dict, so json.loads is unnecessary here
+    print(user_prompt)
+    # At the bottom of the prompt, the text is only accessible using this syntax
+    prompt = f"""
+    You will be given text from a customer who is looking for a new home, which is delimitted by three backticks. \
+    You will pick out specific keywords from the text and use it to create a JSON object. \
+    This JSON object will contain two attributes: 'input' which is the location of the house and 'limit' which will always be 5. \
+    The format of 'input' should a string in the form: State, City, zipcode. The zipcode is not always necessary.
+    
+    User text: '''{user_prompt['userIn']}'''
+    """
     response = openai.ChatCompletion.create(
     model="gpt-3.5-turbo",
     messages=[
         {
         "role": "system",
-        "content": instruction + prompt
-        }
+        "content": prompt
+        },
     ],
     temperature=1,
     max_tokens=256,
     stop=None,
     n=1
     )
-    print(response.choices[0].message.content)
-    return JsonResponse(response['choices'][0]['message']['content'], safe=False)
+    # The response is already a dict, so JsonResponse is unnecessary here
+    return response['choices'][0]['message']['content']
 
 @csrf_exempt
 def get_listings(request):
+    # the text from the request is in request.body
+    # json.loads() will turn the request text into a dict
     user_prompt = json.loads(request.body)
 
     url = "https://realty-in-us.p.rapidapi.com/locations/v2/auto-complete"
 
-    querystring = json.loads(get_gpt_summary(user_prompt))
+    # gpt_res is already a dict
+    gpt_res = get_gpt_summary(user_prompt)
     
-    print(json.loads(querystring.content))
+    print('gpt_res: ',gpt_res)
+    querystring = json.loads(gpt_res.content)
+    print('Query string: ',querystring)
+    
     headers = {
         "X-RapidAPI-Key": settings.RAPID_API_KEY,
         "X-RapidAPI-Host": "realty-in-us.p.rapidapi.com"
@@ -46,5 +55,6 @@ def get_listings(request):
 
     response = requests.get(url, headers=headers, params=querystring)
 
-    print(response.json())
-    return JsonResponse(response.json(), safe=False)
+    print(response.content)
+    # Here we need JsonResponse, text is accessed like request at the top of function
+    return JsonResponse(json.loads(response.content), safe=False)
