@@ -13,6 +13,8 @@ SECRET_KEY = env('SECRET_KEY')
 
 openai.api_key = env('OPENAI_KEY')
 RAPID_API_KEY = env('RAPID_API_KEY')
+MAPS_KEY = env('MAPS_KEY')
+ZIPCODEBASE_KEY = env('ZIPCODEBASE_KEY')
 
 DEBUG = env('DEBUG')
 
