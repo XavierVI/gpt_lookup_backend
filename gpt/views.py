@@ -4,24 +4,23 @@ import openai
 import json
 import requests
 from django.conf import settings
-
-"""
-TODO:
-- Add a function to retrieve postal code for a location (google maps api)
-- Add a function to retrieve a list of postal codes near one postal code (zipcodes api)
-- Modify GPT prompt to take the following into consideration:
-    * whether the user specified what postal code they want to live in/near
-    * whether the user wants to live near a specific location, such as a school
-"""
+import random
 
 @csrf_exempt
 def get_listings(request):
+    rand_postal = random.randint(0,4)
     postal_code = {}
-    if request.method == 'POST':
-        data = json.loads(request.body)
-        user_prompt = data.get('userIn') # .get retrieves the property
-    
+    data = json.loads(request.body)
+    user_prompt = data.get('userIn') # .get retrieves the property
     gpt_res = get_gpt_summary(user_prompt)
+    payload = {}
+    url = "https://realty-in-us.p.rapidapi.com/properties/v3/list"
+    headers = {
+        "content-type": "application/json",
+        "X-RapidAPI-Key": settings.RAPID_API_KEY,
+        "X-RapidAPI-Host": "realty-in-us.p.rapidapi.com"
+    }
+
     if gpt_res == -1:
         return JsonResponse({'error':'Error: there was an issue parsing GPT response'})
     # You could make things simplier by only calling google maps when POI is defined
@@ -33,39 +32,48 @@ def get_listings(request):
         if postal_code == -1:
             return JsonResponse({"error": "An error occurred while parsing your request"})
         else:
-            get_postals_from_radius(postal_code)
-
+            postal_code = get_postals_from_radius(postal_code)
+            print('Postal type: ',postal_code)
+            print('Postal: ',postal_code['results'][rand_postal]['code'])
+            payload = {
+                "limit": 5,
+                "offset": 0,
+                "postal_code": postal_code['results'][rand_postal]['code'],
+                "status": ["for_sale", "ready_to_build"],
+                "sort": {
+                    "direction": "desc",
+                    "field": "list_date"
+                }
+            }
     else:
         postal_code = get_postal_for_city(gpt_res['location'])
+        payload = {
+            "limit": 5,
+            "offset": 0,
+            "postal_code": postal_code['results'][rand_postal],
+            "status": ["for_sale", "ready_to_build"],
+            "sort": {
+                "direction": "desc",
+                "field": "list_date"
+            }
+        }
         print('Postal for city type: ',type(postal_code))
         print('Postal for city: ',postal_code)
         print(postal_code['results'])
     
-    url = "https://realty-in-us.p.rapidapi.com/properties/v3/list"
-    payload = {
-        "limit": 5,
-        "offset": 0,
-        "postal_code": postal_code['results'][0],
-        "status": ["for_sale", "ready_to_build"],
-        "sort": {
-            "direction": "desc",
-            "field": "list_date"
-        }
-    }
-    headers = {
-        "content-type": "application/json",
-        "X-RapidAPI-Key": settings.RAPID_API_KEY,
-        "X-RapidAPI-Host": "realty-in-us.p.rapidapi.com"
-    }
+    print('Payload type: ',type(payload))
     response = requests.post(url, json=payload, headers=headers)
-    print('API response type: ',type(response.content))
-    print('API response: ',response.content)
-    listings = json.loads(response.content)
-    
-    if response.content == b'':
-        return JsonResponse({'Error': 'No matches were found.'})
+    if response.status_code == 200:
+        listings = response.json()
+        print('API response type: ',type(listings))
+        print('API response: ',listings)
+        return JsonResponse(listings, safe=False)
+    else:
+        print(response.status_code)
+        return JsonResponse({'error':'could not find any matches'})
+
     # Here we need JsonResponse, text is accessed like request at the top of function
-    return JsonResponse(listings, safe=False)
+    
 
 
 # The response from google maps can be quite complex
@@ -92,7 +100,7 @@ def get_postal_for_city(location):
     ("city",location['city']),
     ("state_name",location['state']),
     ("country","US"),
-    ("limit",2)
+    ("limit",5)
     );
 
     response = requests.get('https://app.zipcodebase.com/api/v1/code/city', headers=headers, params=params);
@@ -105,12 +113,14 @@ def get_postals_from_radius(postal_code):
 
     params = (
     ('code',f'{postal_code}'),
-    ('radius','100'), # in km
+    ('radius','5'), # in km
     ('country','us'),
     );
 
     response = requests.get('https://app.zipcodebase.com/api/v1/radius', headers=headers, params=params);
-    return response
+    print('radius res type: ',type(response.json()))
+    print('radius res: ',response.json())
+    return response.json()
 
 def get_gpt_summary(user_prompt):
     # User prompt is already a dict, so json.loads is unnecessary here
@@ -155,4 +165,3 @@ def get_gpt_summary(user_prompt):
     print('GPT response: ',response)
     # The response is already a dict, so JsonResponse is unnecessary here
     return response
-
