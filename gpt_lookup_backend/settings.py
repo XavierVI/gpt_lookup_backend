@@ -17,6 +17,7 @@ MAPS_KEY = env('MAPS_KEY')
 ZIPCODEBASE_KEY = env('ZIPCODEBASE_KEY')
 
 DEBUG = env('DEBUG')
+APPEND_SLASH=False
 
 ALLOWED_HOSTS = [
     'localhost',
